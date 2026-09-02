@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
-  Calendar, 
+  Calendar as CalendarIcon, 
   Clock, 
   Users, 
   MapPin, 
@@ -10,11 +10,23 @@ import {
   Phone, 
   User, 
   Mail,
-  Wine,
-  PartyPopper
+  PartyPopper,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { businessInfo } from '../../data/businessData';
+
+const TIME_SLOTS = [
+  { value: '12:30', label: '12:30 PM', category: 'Lunch', desc: 'Afternoon dining' },
+  { value: '13:30', label: '01:30 PM', category: 'Lunch', desc: 'Late lunch' },
+  { value: '16:00', label: '04:00 PM', category: 'Sundowner', desc: 'Breezy cocktails' },
+  { value: '18:30', label: '06:30 PM', category: 'Evening', desc: 'Sunset vibes' },
+  { value: '20:00', label: '08:00 PM', category: 'Prime Dinner', desc: 'Chef specials & lounge' },
+  { value: '21:30', label: '09:30 PM', category: 'Nightlife', desc: 'Live DJ & party' },
+  { value: '23:00', label: '11:00 PM', category: 'Late Night', desc: 'High-energy beats' },
+  { value: '00:30', label: '12:30 AM', category: 'Midnight Set', desc: 'Late night cocktails' },
+];
 
 export default function ReservationModal({ isOpen, onClose, preselectedPackage = null }) {
   const [formData, setFormData] = useState({
@@ -33,12 +45,51 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
   const [bookingRef, setBookingRef] = useState('');
   const [errors, setErrors] = useState({});
 
+  // Custom picker dropdown states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(() => new Date());
+
+  const datePickerRef = useRef(null);
+  const timePickerRef = useRef(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (datePickerRef.current && !datePickerRef.current.contains(event.target)) {
+        setShowDatePicker(false);
+      }
+      if (timePickerRef.current && !timePickerRef.current.contains(event.target)) {
+        setShowTimePicker(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   if (!isOpen) return null;
+
+  // Phone input sanitizer: allow only numbers, max 10 digits
+  const handlePhoneChange = (e) => {
+    const rawValue = e.target.value;
+    const digitsOnly = rawValue.replace(/\D/g, '').slice(0, 10);
+    setFormData(prev => ({ ...prev, phone: digitsOnly }));
+    if (errors.phone) {
+      setErrors(prev => ({ ...prev, phone: null }));
+    }
+  };
 
   const validate = () => {
     const errs = {};
     if (!formData.name.trim()) errs.name = 'Full name is required';
-    if (!formData.phone.trim() || formData.phone.length < 10) errs.phone = 'Valid 10-digit phone number required';
+    
+    // Strict 10-digit Indian mobile number validation
+    if (!formData.phone.trim()) {
+      errs.phone = 'Mobile number is required';
+    } else if (!/^[6-9]\d{9}$/.test(formData.phone)) {
+      errs.phone = 'Please enter a valid 10-digit mobile number';
+    }
+
     if (!formData.email.trim() || !formData.email.includes('@')) errs.email = 'Valid email is required';
     if (!formData.date) errs.date = 'Date is required';
     if (!formData.time) errs.time = 'Time is required';
@@ -73,6 +124,78 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
     onClose();
   };
 
+  // Helper date utilities for custom calendar
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const getDaysInMonth = (year, month) => {
+    return new Date(year, month + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (year, month) => {
+    return new Date(year, month, 1).getDay();
+  };
+
+  const handlePrevMonth = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPickerMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPickerMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const handleSelectDate = (year, month, day) => {
+    const formattedMonth = String(month + 1).padStart(2, '0');
+    const formattedDay = String(day).padStart(2, '0');
+    const dateStr = `${year}-${formattedMonth}-${formattedDay}`;
+    setFormData(prev => ({ ...prev, date: dateStr }));
+    if (errors.date) setErrors(prev => ({ ...prev, date: null }));
+    setShowDatePicker(false);
+  };
+
+  const setQuickDate = (offsetDays) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const dateStr = d.toISOString().split('T')[0];
+    setFormData(prev => ({ ...prev, date: dateStr }));
+    setPickerMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    if (errors.date) setErrors(prev => ({ ...prev, date: null }));
+    setShowDatePicker(false);
+  };
+
+  const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return 'Select Date';
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getSelectedTimeObj = () => {
+    return TIME_SLOTS.find(slot => slot.value === formData.time) || {
+      value: formData.time,
+      label: formData.time,
+      category: 'Selected',
+      desc: ''
+    };
+  };
+
+  const year = pickerMonth.getFullYear();
+  const month = pickerMonth.getMonth();
+  const daysInMonth = getDaysInMonth(year, month);
+  const firstDay = getFirstDayOfMonth(year, month);
+  const monthName = pickerMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-darker/80 backdrop-blur-xl animate-fade-in">
       <div className="relative w-full max-w-2xl bg-brand-surface border border-brand-gold/30 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
@@ -82,7 +205,7 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-gold-gradient p-[1px] shadow-gold-sm">
               <div className="w-full h-full bg-brand-dark rounded-[11px] flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-brand-gold" />
+                <CalendarIcon className="w-5 h-5 text-brand-gold" />
               </div>
             </div>
             <div>
@@ -131,17 +254,25 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
                 <div>
                   <label className="block text-xs font-semibold text-brand-light/90 mb-1.5 flex items-center">
                     <Phone className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
-                    Mobile Number *
+                    Mobile Number * (10 Digits)
                   </label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="e.g. +91 98765 43210"
-                    className={`w-full px-4 py-2.5 rounded-xl bg-brand-dark border ${
-                      errors.phone ? 'border-red-500' : 'border-white/10'
-                    } text-white placeholder-brand-muted text-sm focus:outline-none focus:border-brand-gold`}
-                  />
+                  <div className="relative">
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={10}
+                      value={formData.phone}
+                      onChange={handlePhoneChange}
+                      placeholder="e.g. 9876543210"
+                      className={`w-full px-4 py-2.5 rounded-xl bg-brand-dark border ${
+                        errors.phone ? 'border-red-500' : 'border-white/10'
+                      } text-white placeholder-brand-muted text-sm focus:outline-none focus:border-brand-gold transition-colors`}
+                    />
+                    {formData.phone && formData.phone.length === 10 && /^[6-9]\d{9}$/.test(formData.phone) && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                    )}
+                  </div>
                   {errors.phone && <span className="text-red-400 text-xs mt-1 block">{errors.phone}</span>}
                 </div>
               </div>
@@ -164,43 +295,221 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
                 {errors.email && <span className="text-red-400 text-xs mt-1 block">{errors.email}</span>}
               </div>
 
-              {/* Date, Time, Guests Row */}
+              {/* Date, Time, Guests Row with Custom Luxury Pickers */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
+                
+                {/* Custom Luxury Date Picker */}
+                <div className="relative" ref={datePickerRef}>
                   <label className="block text-xs font-semibold text-brand-light/90 mb-1.5 flex items-center">
-                    <Calendar className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
+                    <CalendarIcon className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
                     Date *
                   </label>
-                  <input
-                    type="date"
-                    value={formData.date}
-                    min={new Date().toISOString().split('T')[0]}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-brand-dark border border-white/10 text-white text-sm focus:outline-none focus:border-brand-gold"
-                  />
+                  
+                  {/* Date trigger button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDatePicker(!showDatePicker);
+                      setShowTimePicker(false);
+                    }}
+                    className={`w-full px-3.5 py-2.5 rounded-xl bg-brand-dark border ${
+                      showDatePicker ? 'border-brand-gold ring-1 ring-brand-gold/30' : 'border-white/10 hover:border-brand-gold/40'
+                    } text-left flex items-center justify-between transition-all`}
+                  >
+                    <span className="text-white text-xs sm:text-sm truncate">
+                      {formatDisplayDate(formData.date)}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-brand-gold transition-transform duration-200 ${showDatePicker ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Luxury Calendar Popover */}
+                  {showDatePicker && (
+                    <div className="absolute left-0 sm:left-0 mt-2 z-50 w-72 sm:w-80 p-4 bg-brand-surfaceElevated border border-brand-gold/30 rounded-2xl shadow-2xl backdrop-blur-xl animate-scale-up">
+                      {/* Month & Nav Controls */}
+                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
+                        <span className="font-display font-bold text-sm text-white flex items-center">
+                          <span className="gold-gradient-text">{monthName}</span>
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={handlePrevMonth}
+                            className="p-1.5 rounded-lg bg-brand-dark hover:bg-brand-gold/20 text-brand-muted hover:text-brand-gold transition-colors"
+                            aria-label="Previous Month"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleNextMonth}
+                            className="p-1.5 rounded-lg bg-brand-dark hover:bg-brand-gold/20 text-brand-muted hover:text-brand-gold transition-colors"
+                            aria-label="Next Month"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Quick Date Shortcuts */}
+                      <div className="grid grid-cols-3 gap-1.5 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setQuickDate(0)}
+                          className="py-1 px-1.5 rounded-lg bg-brand-dark hover:bg-brand-gold/15 border border-white/5 hover:border-brand-gold/30 text-[11px] text-brand-light/90 hover:text-brand-gold transition-colors font-medium text-center"
+                        >
+                          Today
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDate(1)}
+                          className="py-1 px-1.5 rounded-lg bg-brand-dark hover:bg-brand-gold/15 border border-white/5 hover:border-brand-gold/30 text-[11px] text-brand-light/90 hover:text-brand-gold transition-colors font-medium text-center"
+                        >
+                          Tomorrow
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const now = new Date();
+                            const day = now.getDay();
+                            const daysUntilSat = (6 - day + 7) % 7 || 7;
+                            setQuickDate(daysUntilSat);
+                          }}
+                          className="py-1 px-1.5 rounded-lg bg-brand-dark hover:bg-brand-gold/15 border border-white/5 hover:border-brand-gold/30 text-[11px] text-brand-light/90 hover:text-brand-gold transition-colors font-medium text-center"
+                        >
+                          Weekend
+                        </button>
+                      </div>
+
+                      {/* Weekday headers */}
+                      <div className="grid grid-cols-7 gap-1 text-center mb-1 text-[11px] font-semibold text-brand-gold/70">
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                          <div key={d} className="py-1">{d}</div>
+                        ))}
+                      </div>
+
+                      {/* Calendar Days Grid */}
+                      <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                        {/* Empty offset days */}
+                        {Array.from({ length: firstDay }).map((_, i) => (
+                          <div key={`empty-${i}`} className="p-1.5"></div>
+                        ))}
+
+                        {/* Month Days */}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const dayNum = i + 1;
+                          const cellDate = new Date(year, month, dayNum);
+                          cellDate.setHours(0, 0, 0, 0);
+                          const isPast = cellDate < today;
+
+                          const formattedMonth = String(month + 1).padStart(2, '0');
+                          const formattedDay = String(dayNum).padStart(2, '0');
+                          const thisDateStr = `${year}-${formattedMonth}-${formattedDay}`;
+                          const isSelected = formData.date === thisDateStr;
+                          const isTodayDate = cellDate.getTime() === today.getTime();
+
+                          return (
+                            <button
+                              key={dayNum}
+                              type="button"
+                              disabled={isPast}
+                              onClick={() => handleSelectDate(year, month, dayNum)}
+                              className={`p-1.5 sm:p-2 rounded-xl text-xs transition-all font-medium ${
+                                isSelected
+                                  ? 'bg-gold-gradient text-brand-darker font-bold shadow-gold-sm scale-105'
+                                  : isPast
+                                  ? 'text-white/20 cursor-not-allowed'
+                                  : isTodayDate
+                                  ? 'border border-brand-gold/60 text-brand-gold hover:bg-brand-gold/20'
+                                  : 'text-brand-light/90 hover:bg-brand-gold/15 hover:text-brand-gold'
+                              }`}
+                            >
+                              {dayNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div>
+                {/* Custom Luxury Time Picker */}
+                <div className="relative" ref={timePickerRef}>
                   <label className="block text-xs font-semibold text-brand-light/90 mb-1.5 flex items-center">
                     <Clock className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
                     Preferred Time *
                   </label>
-                  <select
-                    value={formData.time}
-                    onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-brand-dark border border-white/10 text-white text-sm focus:outline-none focus:border-brand-gold"
+                  
+                  {/* Time trigger button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTimePicker(!showTimePicker);
+                      setShowDatePicker(false);
+                    }}
+                    className={`w-full px-3.5 py-2.5 rounded-xl bg-brand-dark border ${
+                      showTimePicker ? 'border-brand-gold ring-1 ring-brand-gold/30' : 'border-white/10 hover:border-brand-gold/40'
+                    } text-left flex items-center justify-between transition-all`}
                   >
-                    <option value="12:30">12:30 PM (Lunch)</option>
-                    <option value="13:30">01:30 PM (Lunch)</option>
-                    <option value="16:00">04:00 PM (Sundowner)</option>
-                    <option value="18:30">06:30 PM (Evening)</option>
-                    <option value="20:00">08:00 PM (Prime Dinner)</option>
-                    <option value="21:30">09:30 PM (Nightlife / DJ)</option>
-                    <option value="23:00">11:00 PM (Late Night Party)</option>
-                    <option value="00:30">12:30 AM (Midnight Set)</option>
-                  </select>
+                    <span className="text-white text-xs sm:text-sm truncate">
+                      {getSelectedTimeObj().label}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-brand-gold transition-transform duration-200 ${showTimePicker ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Luxury Time Popover */}
+                  {showTimePicker && (
+                    <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 z-50 w-72 sm:w-80 p-4 bg-brand-surfaceElevated border border-brand-gold/30 rounded-2xl shadow-2xl backdrop-blur-xl animate-scale-up max-h-72 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
+                        <span className="font-display font-bold text-xs text-brand-gold uppercase tracking-wider">
+                          Select Table Time Slot
+                        </span>
+                        <span className="text-[10px] text-brand-muted">
+                          Operating Hours
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {TIME_SLOTS.map((slot) => {
+                          const isSelected = formData.time === slot.value;
+                          return (
+                            <button
+                              key={slot.value}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, time: slot.value }));
+                                if (errors.time) setErrors(prev => ({ ...prev, time: null }));
+                                setShowTimePicker(false);
+                              }}
+                              className={`p-2.5 rounded-xl text-left border transition-all ${
+                                isSelected
+                                  ? 'bg-gold-gradient text-brand-darker border-brand-gold shadow-gold-sm font-bold scale-[1.02]'
+                                  : 'bg-brand-dark border-white/5 hover:border-brand-gold/40 text-brand-light/90 hover:bg-brand-gold/10'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className={`text-xs font-bold ${isSelected ? 'text-brand-darker' : 'text-white'}`}>
+                                  {slot.label}
+                                </span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-semibold ${
+                                  isSelected 
+                                    ? 'bg-brand-darker text-brand-gold' 
+                                    : 'bg-brand-surface text-brand-gold/90 border border-brand-gold/20'
+                                }`}>
+                                  {slot.category}
+                                </span>
+                              </div>
+                              <p className={`text-[10px] truncate ${isSelected ? 'text-brand-darker/80 font-medium' : 'text-brand-muted'}`}>
+                                {slot.desc}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
+                {/* Guests Selection */}
                 <div>
                   <label className="block text-xs font-semibold text-brand-light/90 mb-1.5 flex items-center">
                     <Users className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
@@ -209,10 +518,10 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
                   <select
                     value={formData.guests}
                     onChange={(e) => setFormData({ ...formData, guests: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-brand-dark border border-white/10 text-white text-sm focus:outline-none focus:border-brand-gold"
+                    className="w-full px-3 py-2.5 rounded-xl bg-brand-dark border border-white/10 text-white text-sm focus:outline-none focus:border-brand-gold transition-colors"
                   >
                     <option value="1">1 Guest</option>
-                    <option value="2">2 Guests (Couple)</option>
+                    <option value="2">2 Guests</option>
                     <option value="4">4 Guests</option>
                     <option value="6">6 Guests</option>
                     <option value="8">8 Guests (VIP)</option>
@@ -321,7 +630,7 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
                 </div>
                 <div className="flex justify-between">
                   <span className="text-brand-muted">Date & Time:</span>
-                  <span className="font-semibold text-white">{formData.date} at {formData.time}</span>
+                  <span className="font-semibold text-white">{formatDisplayDate(formData.date)} at {getSelectedTimeObj().label}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-brand-muted">Party Size:</span>
@@ -361,3 +670,4 @@ export default function ReservationModal({ isOpen, onClose, preselectedPackage =
     </div>
   );
 }
+
